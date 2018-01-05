@@ -1,0 +1,188 @@
+---
+title: "Machine Learning Final Project"
+author: "B. Kavalar"
+date: "January 5, 2018"
+output: html_document
+---
+###Human Activity Analysis Using Machine Learning Techniques
+***
+###Executive Summary
+
+#####This report analyzes data from wearable devices used during a measured exercise experiment. These wearable devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, our goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants and predict whether they were correctly performing the exercise based on a "classe" varaible in the dataset. These participants were asked to perform barbell lifts correctly and incorrectly in 5 different ways - ie: five different classe variables.
+
+#####The training data for this project are available here: https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv.  
+
+#####The test data are available here: https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv. 
+
+#####The data for this project come from this web source: http://groupware.les.inf.puc-rio.br/har. 
+
+##### The summary of findings can be found below:
+1) We downloaded the datasets and cleaned the data to create an initial list of 53 predictors.  We used this prediction list on three different machine learning algorithms:  Gradient Boost (GB), Support Vector Machine (SVM), and Random Forest (RF).
+2) From the analysis we found that the Random Forest method produced the highest accuracy of three algorithms tried.  The output with RF was 99.8% accurate using cross validiation method of 4-fold and with using a validation dataset derived from the provided training dataset.
+3) Out of Sample Error was found to be about 0.2% using the random forest method.
+  
+***
+###Exploratory Data Analysis and Feature Extraction
+
+####The goal of the project is to predict the "classe" variable in the training and test datasets.  We accomplish this by building a machine learning model and use the resultant model to predict the outcome in the datasest for submission.  We will use several different machine learning alogrithms and determine which one provides the most accurate prediction of the "classe" variable given the predictors chosen.
+
+####First we download both the training and test datasets directly from the website listed above:
+```{r}
+trainingData <- read.csv(url("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"))
+testData <- read.csv(url("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"))
+```
+
+####We need to remove the variables with low number of entries.  We need to keep the same variables in each dataset so we are using the near zero variable outcomes from the training dataset. If we use nearZeroVar on the test dataset we remove too many variables and this would cause confusion with the final derived model created with the training dataset.
+```{r}
+library(caret)  #load required library for analysis and models
+
+train_clean <- trainingData[, -c(nearZeroVar(trainingData))]
+test_clean <- testData[, -c(nearZeroVar(trainingData))]
+```
+
+####Next we check the dimensions and names of the variables to understand the size of the dataset and construct of the data columns.
+```{r echo=FALSE}
+dim(train_clean)
+names(train_clean)
+dim(test_clean)
+names(test_clean)
+```
+
+####We can see from this name data that the train dataset has the "classe" variable as the last column with the first five columns as data that are not suitable for predictors since they are participate and time information.  We also have a fairly large number of rows which will dictate our method of cross validation.
+
+###Cross Validation Approach
+####We initially use data splitting to break training data into train and validation datasets for cross validation method due to the large number of rows in the training data set. We split the training set into 70% for training and 30% for validation datasets.  We also explore using 4-fold cross validation in one of the models to understand sensitivity of the number of predictors and plot those results.
+```{r}
+set.seed(1234)
+train_part <- createDataPartition(y=train_clean$classe,p=.70,list=F)
+training_part <- train_clean[train_part,]
+valid_part <- train_clean[-train_part,]
+```
+
+###Feature Extraction
+####Since it appears that first five columns are not useful data so we remove them and convert the remaining columns to numeric for test clean we need to remove the last column as it's not useful data either and the train and test datasets will then match the data columns exactly.  We also remove the "problem ID" column in the test dataset since it is not required for the prediction.
+```{r}
+train_clean2 <- training_part[, 6:100]
+valid_clean2 <- valid_part[, 6:100] 
+
+#This will be used later for final test of 20 sample runs.  
+test_clean2 <- test_clean[, 6:99] 
+```
+
+####Next we remove NAs from datasets and then check size and names to ensure they all match.
+```{r}
+nas <- is.na(apply(train_clean2[, 1:94],2,sum))
+train_clean2 <- train_clean2[,!nas]
+
+nas1 <- is.na(apply(valid_clean2[, 1:94],2,sum))
+valid_clean2 <- valid_clean2[,!nas1]
+
+nas2 <- is.na(apply(test_clean2[, 1:94],2,sum))
+test_clean2 <- test_clean2[,!nas2]
+
+dim(train_clean2)
+names(train_clean2)
+
+dim(valid_clean2)
+names(valid_clean2)
+
+dim(test_clean2)
+names(test_clean2)
+```
+
+####We can see that we are down to 53 predictors in the training, validiation, and test datasets.
+
+***
+###Model Building and Analysis
+####Next we begin the process of determining which machine learning model will work best for the datasets and determine accuracy of model with cross validation.
+
+####We first train a model using the gradient boosting method with cleaned training dataset
+```{r}
+set.seed(33833)
+modGB_Fit <- train(classe ~ ., method="gbm", data=train_clean2, verbose=FALSE, 
+                   trControl=trainControl(method="none"))
+modGB_Fit
+modGB_Fit$finalModel
+```
+
+####Next we predict the outcome using our gradient boost model and our cross validation dataset.  Then we produce a confusion matrix with accuracy calculations.
+```{r}
+predictGB <- predict(modGB_Fit, valid_clean2[,1:53])
+confusionMatrix(predictGB, valid_clean2[,54])
+
+#calculate accuracy and Kappa for SVM
+accGB <- postResample(predictGB, obs = valid_clean2$classe)
+accGB
+```
+
+####We can see from the results that the accuracy is not very good - only 76% for gradient boosting.
+
+####Next we try to use support vector machine (SVM) method with the same clean training dataset.
+```{r}
+library(e1071)  #load required library for SVM
+set.seed(33833)
+modSVM_Fit <- svm(classe ~., data=train_clean2)
+modSVM_Fit
+```
+
+####Next we predict the outcome using our SVM model and our cross validation dataset.  Then we produce a confusion matrix with accuracy calculations.
+```{r}
+predictSVM <- predict(modSVM_Fit, valid_clean2[,1:53])
+confusionMatrix(predictSVM, valid_clean2[,54])
+
+#calculate accuracy and Kappa for SVM
+accSVM <- postResample(predictSVM, obs = valid_clean2$classe)
+accSVM
+```
+
+####We can see from the results that the accuracy is better than with gradient boosting.  We are up to 95% with SVM. 
+
+####Next we use a random forest method with the same clean training dataset.  We add additional parameter for 4-fold cross validation to improve accuracy.
+```{r}
+set.seed(33833)
+#we try 4-fold cross validation on RF model to improve accuracy and tuning
+modRF_Fit <- train(classe ~ ., data=train_clean2, method="rf", 
+                   trControl=trainControl(method="cv", number = 4))
+modRF_Fit
+modRF_Fit$finalModel
+```
+
+####We then plot the random forest model to show accuracy versus number of predictors used in the model build.  This shows us what are the optimal number of predictors to use to maximize the accuracy,.
+```{r}
+plot(modRF_Fit, log = "y", lwd = 3, main = "Random Forest Model Accuracy", xlab = "Number of Predictors", 
+     ylab = "Accuracy")
+```
+
+####Next we predict the outcome using our random forest model and our cross validation dataset.  Then we produce a confusion matrix with accuracy calculations.
+```{r}
+predictRF <- predict(modRF_Fit, valid_clean2[,1:53])
+confusionMatrix(predictRF, valid_clean2[,54])
+
+#calculate accuracy and Kappa for random forest
+accRF <- postResample(predictRF, obs = valid_clean2$classe)
+```
+
+####We can see this outcome is the best model so far - we are up to 99.8% using the random forest method.
+
+####Below is a summary table of each model's prediction accuracy
+
+| Gradient Boost (Accuracy, Kappa) | Support Vector Machine (Accuracy, Kappa) | Random Forest (Accuracy, Kappa) |
+|---------------|----------------|----------------|
+|`r format(round(accGB, 3))`  | `r format(round(accSVM, 3))` | `r format(round(accRF, 3))` |
+
+
+###Calculate Out Of Sample Error of the predicted random forest model
+```{r}
+OOS_acc <- sum(as.numeric(predictRF == valid_clean2$classe)/length(predictRF))
+
+# out of sample error and percentage of out of sample error
+OOS_Err <- (1 - OOS_acc)*100
+```
+####The Out of Sample Error Estimation is `r format(round(OOS_Err, 2))` %.
+
+####For the final submission quiz, we predict the classe column for test dataset with random forest model since this was the best prediction accuracy and is above 99.5% which should provide enough fidelity for a successful outcome.
+```{r}
+testClasseRF <- as.character(predict(modRF_Fit, test_clean2))
+testClasseRF
+```
+
